@@ -396,7 +396,7 @@ def get_dashboard_data():
         high_risk_transactions = conn.execute('''
             SELECT transaction_id, amount, risk_score, risk_level, timestamp
             FROM transactions
-            WHERE risk_score > 70
+            WHERE risk_score >= 70
             ORDER BY timestamp DESC
             LIMIT 10
         ''').fetchall()
@@ -514,7 +514,7 @@ def get_recommendation(analysis_result):
 def generate_demo_data():
     """توليد بيانات تجريبية للاختبار"""
     try:
-        count = request.json.get('count', 100)
+        count = request.json.get('count', 1000)
         
         transaction_types = ['شراء', 'تحويل_محلي', 'تحويل_دولي', 'سحب_نقدي', 'دفع_فواتير']
         payment_methods = ['بطاقة_ائتمان', 'بطاقة_خصم', 'تحويل_بنكي', 'محفظة_رقمية', 'نقد']
@@ -526,6 +526,30 @@ def generate_demo_data():
             is_suspicious = random.random() > 0.7
             
             if is_suspicious:
+                # زيادة احتمالية أن تكون المعاملة الاحتيالية ذات نقاط مخاطر عالية جداً
+                amount = random.uniform(50000, 150000)
+                balance = random.uniform(100, 5000)
+                location = random.choice(['غير معروف', 'خارج البلاد', 'VPN'])
+                device_id = f'DEV{random.randint(1000, 9999)}'
+                user_id = f'USER{random.randint(1000, 9999)}'
+                transaction_type = random.choice(['تحويل_دولي', 'سحب_نقدي'])
+                merchant_category = 'أخرى'
+                payment_method = random.choice(['نقد', 'محفظة_رقمية'])
+                age = random.randint(18, 25)
+                
+                transaction_data = {
+                    'transaction_id': f'TXN{random.randint(100000, 999999)}',
+                    'amount': amount,
+                    'balance': balance,
+                    'location': location,
+                    'device_id': device_id,
+                    'user_id': user_id,
+                    'transaction_type': transaction_type,
+                    'merchant_category': merchant_category,
+                    'payment_method': payment_method,
+                    'age': age
+                }
+            elif random.random() > 0.5: # 15% معاملات متوسطة المخاطر
                 transaction_data = {
                     'transaction_id': f'TXN{random.randint(100000, 999999)}',
                     'amount': random.uniform(10000, 100000),
@@ -538,7 +562,7 @@ def generate_demo_data():
                     'payment_method': random.choice(['نقد', 'محفظة_رقمية']),
                     'age': random.randint(18, 75)
                 }
-            else:
+            else: # 55% معاملات عادية
                 transaction_data = {
                     'transaction_id': f'TXN{random.randint(100000, 999999)}',
                     'amount': random.uniform(10, 5000),

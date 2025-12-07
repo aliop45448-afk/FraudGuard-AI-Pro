@@ -7,6 +7,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: ['5173-ieddf2kb511tbc1z3de4d-07ec8a8d.manus-asia.computer']
+    allowedHosts: ['5173-ieddf2kb511tbc1z3de4d-0ec8a8d.manus-asia.computer']
   }
 })
