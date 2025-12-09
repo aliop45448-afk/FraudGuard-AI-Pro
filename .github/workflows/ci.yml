@@ -1,0 +1,49 @@
+name: FraudGuard AI Pro CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      run: |
+        cd fraud_detection_api
+        pip install -r requirements.txt
+
+    - name: Run Python tests
+      run: |
+        # Add test command here once tests are created
+        echo "No Python tests yet"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Install Node.js dependencies
+      run: |
+        cd fraudguard-pro-app
+        npm install
+
+    - name: Build Frontend
+      run: |
+        cd fraudguard-pro-app
+        npm run build
+
+    - name: Run Node.js tests
+      run: |
+        # Add test command here once tests are created
+        echo "No Node.js tests yet"
