@@ -1,0 +1,85 @@
+/* Risk Heatmap Styles */
+
+.risk-heatmap {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.heatmap-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 100px;
+  gap: 15px;
+  align-items: center;
+}
+
+.heatmap-label {
+  font-weight: 500;
+  color: #475569;
+  font-size: 14px;
+}
+
+.heatmap-bar {
+  background: #f1f5f9;
+  border-radius: 4px;
+  height: 40px;
+  overflow: hidden;
+  position: relative;
+}
+
+.heatmap-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+/* Risk Level Colors */
+.risk-critical {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+}
+
+.risk-high {
+  background: linear-gradient(90deg, #ea580c, #f97316);
+}
+
+.risk-medium {
+  background: linear-gradient(90deg, #ca8a04, #eab308);
+}
+
+.risk-low {
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+}
+
+.risk-safe {
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+}
+
+.heatmap-value {
+  text-align: right;
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .heatmap-row {
+    grid-template-columns: 120px 1fr 80px;
+    gap: 10px;
+  }
+
+  .heatmap-label {
+    font-size: 12px;
+  }
+
+  .heatmap-value {
+    font-size: 12px;
+  }
+}

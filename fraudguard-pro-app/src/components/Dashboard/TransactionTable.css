@@ -1,0 +1,199 @@
+/* Transaction Table Styles */
+
+.transaction-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.table-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.filter-select {
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  background: white;
+  color: #475569;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.transaction-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.transaction-table thead {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.transaction-table th {
+  padding: 15px;
+  text-align: right;
+  font-weight: 600;
+  color: #475569;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.transaction-table tbody tr {
+  border-bottom: 1px solid #e2e8f0;
+  transition: background 0.3s ease;
+}
+
+.transaction-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.transaction-table tbody tr.row-flagged {
+  background: #fef2f2;
+}
+
+.transaction-table tbody tr.row-flagged:hover {
+  background: #fee2e2;
+}
+
+.transaction-table td {
+  padding: 12px 15px;
+  color: #475569;
+  font-size: 14px;
+}
+
+.txn-id {
+  font-weight: 600;
+  color: #1e293b;
+  font-family: 'Courier New', monospace;
+}
+
+.amount {
+  font-weight: 600;
+  color: #059669;
+}
+
+.probability {
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.timestamp {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* Risk Badge Styles */
+.risk-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.risk-badge.risk-critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.risk-badge.risk-high {
+  background: #fed7aa;
+  color: #92400e;
+}
+
+.risk-badge.risk-medium {
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.risk-badge.risk-low {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.risk-badge.risk-safe {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* Recommendation Badge Styles */
+.recommendation-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recommendation-badge.rec-approve {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.recommendation-badge.rec-block {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.recommendation-badge.rec-review {
+  background: #fed7aa;
+  color: #92400e;
+}
+
+.recommendation-badge.rec-challenge {
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.table-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.table-footer {
+  padding: 15px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 10px 10px;
+  text-align: right;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.table-footer p {
+  margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .transaction-table {
+    font-size: 12px;
+  }
+
+  .transaction-table th,
+  .transaction-table td {
+    padding: 10px 8px;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
