@@ -1,490 +1,303 @@
-from flask import Flask, request, jsonify
-import json
-import datetime
-import random
-import math
+"""
+Inference Service API for FraudGuard AI Pro
 
+Flask-based REST API for real-time fraud detection using the inference pipeline.
+"""
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from datetime import datetime
+import logging
+import numpy as np
+
+from model_orchestration import ModelOrchestrator, ModelMetadata, ModelType
+from inference_pipeline import InferencePipeline, TransactionFeatures
+
+# Initialize Flask app
 app = Flask(__name__)
+CORS(app)
 
-# إضافة CORS headers يدوياً
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# قاعدة بيانات مؤقتة في الذاكرة
-transactions_db = []
-fraud_patterns = []
+# Initialize inference pipeline
+inference_pipeline = InferencePipeline(fraud_threshold=0.5, risk_score_threshold=70.0)
+inference_pipeline.setup_models()
 
-class FraudDetectionEngine:
-    """محرك كشف الاحتيال المتقدم"""
-    
-    def __init__(self):
-        self.risk_weights = {
-            'amount_ratio': 0.25,      # نسبة المبلغ إلى الرصيد
-            'transaction_type': 0.20,   # نوع المعاملة
-            'location': 0.15,          # الموقع الجغرافي
-            'payment_method': 0.15,    # طريقة الدفع
-            'age_factor': 0.10,        # عامل العمر
-            'device_trust': 0.10,      # ثقة الجهاز
-            'time_pattern': 0.05       # نمط الوقت
-        }
-    
-    def calculate_risk_score(self, transaction_data):
-        """حساب نقاط المخاطر للمعاملة"""
-        risk_score = 0
-        risk_factors = []
-        
-        # 1. تحليل نسبة المبلغ إلى الرصيد
-        amount = float(transaction_data.get('amount', 0))
-        balance = float(transaction_data.get('balance', 0))
-        
-        if balance > 0:
-            amount_ratio = amount / balance
-            if amount_ratio > 2.0:  # المبلغ أكبر من ضعف الرصيد
-                risk_score += self.risk_weights['amount_ratio'] * 100
-                risk_factors.append("المبلغ أكبر بكثير من رصيد الحساب")
-            elif amount_ratio > 1.0:  # المبلغ أكبر من الرصيد
-                risk_score += self.risk_weights['amount_ratio'] * 70
-                risk_factors.append("المبلغ يتجاوز رصيد الحساب")
-            elif amount_ratio > 0.5:  # المبلغ أكبر من نصف الرصيد
-                risk_score += self.risk_weights['amount_ratio'] * 30
-                risk_factors.append("المبلغ كبير نسبياً مقارنة بالرصيد")
-        
-        # 2. تحليل نوع المعاملة
-        transaction_type = transaction_data.get('transaction_type', '')
-        high_risk_types = ['تحويل_دولي', 'سحب_نقدي']
-        medium_risk_types = ['تحويل_محلي', 'شراء_أونلاين']
-        
-        if transaction_type in high_risk_types:
-            risk_score += self.risk_weights['transaction_type'] * 80
-            risk_factors.append(f"نوع المعاملة عالي المخاطر: {transaction_type}")
-        elif transaction_type in medium_risk_types:
-            risk_score += self.risk_weights['transaction_type'] * 40
-            risk_factors.append(f"نوع المعاملة متوسط المخاطر: {transaction_type}")
-        
-        # 3. تحليل الموقع الجغرافي
-        location = transaction_data.get('location', '').lower()
-        suspicious_locations = ['غير معروف', 'خارج البلاد', 'مجهول', 'unknown']
-        
-        if any(keyword in location for keyword in suspicious_locations):
-            risk_score += self.risk_weights['location'] * 90
-            risk_factors.append("موقع جغرافي مشبوه أو غير معروف")
-        
-        # 4. تحليل طريقة الدفع
-        payment_method = transaction_data.get('payment_method', '')
-        if payment_method == 'نقد' and amount > 10000:
-            risk_score += self.risk_weights['payment_method'] * 70
-            risk_factors.append("دفع نقدي لمبلغ كبير")
-        elif payment_method == 'محفظة_رقمية' and amount > 50000:
-            risk_score += self.risk_weights['payment_method'] * 50
-            risk_factors.append("محفظة رقمية لمبلغ كبير")
-        
-        # 5. تحليل عامل العمر
-        age = int(transaction_data.get('age', 25))
-        if age < 21 and amount > 50000:
-            risk_score += self.risk_weights['age_factor'] * 80
-            risk_factors.append("عمر صغير لمعاملة بمبلغ كبير")
-        elif age > 70 and transaction_type in ['شراء_أونلاين', 'محفظة_رقمية']:
-            risk_score += self.risk_weights['age_factor'] * 40
-            risk_factors.append("نمط معاملة غير معتاد للفئة العمرية")
-        
-        # 6. تحليل ثقة الجهاز
-        device_id = transaction_data.get('device_id', '')
-        suspicious_devices = ['unknown', 'غير معروف', '000', 'suspicious']
-        
-        if any(keyword in device_id.lower() for keyword in suspicious_devices):
-            risk_score += self.risk_weights['device_trust'] * 85
-            risk_factors.append("معرف جهاز مشبوه أو غير موثوق")
-        
-        # 7. تحليل نمط الوقت (محاكاة)
-        current_hour = datetime.datetime.now().hour
-        if current_hour < 6 or current_hour > 23:  # معاملات في أوقات غير عادية
-            risk_score += self.risk_weights['time_pattern'] * 60
-            risk_factors.append("معاملة في وقت غير عادي")
-        
-        return min(risk_score, 100), risk_factors
-    
-    def get_risk_level(self, risk_score):
-        """تحديد مستوى المخاطر بناءً على النقاط"""
-        if risk_score >= 80:
-            return "خطر عالي جداً", "red"
-        elif risk_score >= 60:
-            return "خطر عالي", "orange"
-        elif risk_score >= 40:
-            return "خطر متوسط", "yellow"
-        elif risk_score >= 20:
-            return "خطر منخفض", "blue"
-        else:
-            return "آمن", "green"
-    
-    def generate_recommendations(self, risk_score, risk_factors):
-        """توليد توصيات بناءً على مستوى المخاطر"""
-        recommendations = []
-        
-        if risk_score >= 80:
-            recommendations.extend([
-                "رفض المعاملة فوراً",
-                "إجراء تحقق إضافي من هوية العميل",
-                "الاتصال بالعميل للتأكد من المعاملة",
-                "إبلاغ وحدة مكافحة الاحتيال"
-            ])
-        elif risk_score >= 60:
-            recommendations.extend([
-                "تأخير المعاملة لمراجعة إضافية",
-                "طلب تأكيد إضافي من العميل",
-                "مراجعة تاريخ المعاملات السابقة"
-            ])
-        elif risk_score >= 40:
-            recommendations.extend([
-                "مراقبة المعاملة عن كثب",
-                "إرسال تنبيه للعميل",
-                "توثيق المعاملة للمراجعة اللاحقة"
-            ])
-        elif risk_score >= 20:
-            recommendations.extend([
-                "مراقبة عادية",
-                "تسجيل المعاملة في السجلات"
-            ])
-        else:
-            recommendations.append("السماح بالمعاملة - لا توجد مخاطر ظاهرة")
-        
-        return recommendations
 
-# إنشاء محرك كشف الاحتيال
-fraud_engine = FraudDetectionEngine()
+# ============================================================================
+# Health Check Endpoints
+# ============================================================================
 
-@app.route('/')
-def home():
-    """الصفحة الرئيسية للـ API"""
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
     return jsonify({
-        "message": "مرحباً بك في API كشف الاحتيال المالي",
-        "version": "1.0.0",
-        "endpoints": {
-            "/analyze": "تحليل معاملة مالية",
-            "/history": "عرض تاريخ المعاملات",
-            "/stats": "إحصائيات النظام"
-        }
-    })
+        "status": "healthy",
+        "service": "inference-service",
+        "timestamp": datetime.utcnow().isoformat(),
+        "models_active": len(inference_pipeline.orchestrator.active_models),
+    }), 200
 
-@app.route('/analyze', methods=['POST'])
-def analyze_transaction():
-    """تحليل معاملة مالية لكشف الاحتيال"""
+
+# ============================================================================
+# Fraud Detection Endpoints
+# ============================================================================
+
+@app.route('/api/detect', methods=['POST'])
+def detect_fraud():
+    """
+    Detect fraud in a transaction.
+    
+    Request body:
+    {
+        "transaction_id": "txn_123",
+        "transaction_amount": 1500.00,
+        "merchant_id": "merchant_001",
+        "merchant_category": "Electronics",
+        "user_id": "user_001",
+        "user_location": "New York, USA",
+        "transaction_time": "2024-01-20T10:30:00Z",
+        "device_fingerprint": "device_abc123",
+        "ip_address": "192.168.1.1",
+        "card_last_four": "4242"
+    }
+    """
     try:
         data = request.get_json()
-        
-        # التحقق من وجود البيانات المطلوبة
-        required_fields = ['transaction_id', 'amount', 'location', 'device_id', 
-                          'user_id', 'transaction_type', 'merchant_category', 
-                          'payment_method', 'age', 'balance']
-        
-        missing_fields = [field for field in required_fields if not data.get(field)]
-        if missing_fields:
-            return jsonify({
-                "error": "حقول مطلوبة مفقودة",
-                "missing_fields": missing_fields
-            }), 400
-        
-        # حساب نقاط المخاطر
-        risk_score, risk_factors = fraud_engine.calculate_risk_score(data)
-        risk_level, risk_color = fraud_engine.get_risk_level(risk_score)
-        recommendations = fraud_engine.generate_recommendations(risk_score, risk_factors)
-        
-        # إنشاء معرف فريد للتحليل
-        analysis_id = f"ANALYSIS_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
-        
-        # حفظ المعاملة في قاعدة البيانات المؤقتة
-        transaction_record = {
-            "analysis_id": analysis_id,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "transaction_data": data,
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "risk_factors": risk_factors,
-            "recommendations": recommendations
-        }
-        transactions_db.append(transaction_record)
-        
-        # إعداد النتيجة
-        result = {
-            "analysis_id": analysis_id,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "risk_assessment": {
-                "risk_score": round(risk_score, 2),
-                "risk_level": risk_level,
-                "risk_color": risk_color,
-                "risk_factors": risk_factors
-            },
-            "transaction_summary": {
-                "transaction_id": data['transaction_id'],
-                "amount": f"{float(data['amount']):,.2f} ريال سعودي",
-                "balance": f"{float(data['balance']):,.2f} ريال سعودي",
-                "ratio": f"{(float(data['amount']) / float(data['balance']) * 100):.1f}%" if float(data['balance']) > 0 else "غير محدد"
-            },
-            "recommendations": recommendations,
-            "detailed_analysis": {
-                "amount_analysis": f"المبلغ: {float(data['amount']):,.2f} ريال، الرصيد: {float(data['balance']):,.2f} ريال",
-                "location_analysis": f"الموقع: {data['location']}",
-                "transaction_type_analysis": f"نوع المعاملة: {data['transaction_type']}",
-                "payment_method_analysis": f"طريقة الدفع: {data['payment_method']}",
-                "age_analysis": f"عمر العميل: {data['age']} سنة"
+
+        # Validate required fields
+        required_fields = [
+            'transaction_id', 'transaction_amount', 'merchant_id',
+            'merchant_category', 'user_id', 'user_location',
+            'transaction_time', 'device_fingerprint', 'ip_address', 'card_last_four'
+        ]
+
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        # Create transaction features
+        features = TransactionFeatures(
+            transaction_id=data['transaction_id'],
+            transaction_amount=data['transaction_amount'],
+            merchant_id=data['merchant_id'],
+            merchant_category=data['merchant_category'],
+            user_id=data['user_id'],
+            user_location=data['user_location'],
+            transaction_time=data['transaction_time'],
+            device_fingerprint=data['device_fingerprint'],
+            ip_address=data['ip_address'],
+            card_last_four=data['card_last_four'],
+        )
+
+        # Process transaction
+        result = inference_pipeline.process_transaction(features)
+
+        return jsonify({
+            "transaction_id": result.transaction_id,
+            "fraud_probability": result.fraud_probability,
+            "risk_score": result.risk_score,
+            "is_flagged": result.is_flagged,
+            "confidence": result.confidence,
+            "recommendation": result.recommendation,
+            "processing_time_ms": result.processing_time_ms,
+            "timestamp": result.timestamp,
+            "model_predictions": result.model_predictions,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Fraud detection error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/batch-detect', methods=['POST'])
+def batch_detect_fraud():
+    """
+    Detect fraud in multiple transactions (batch processing).
+    
+    Request body:
+    {
+        "transactions": [
+            { transaction data },
+            { transaction data },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if 'transactions' not in data or not isinstance(data['transactions'], list):
+            return jsonify({"error": "Invalid request format"}), 400
+
+        results = []
+        for txn_data in data['transactions']:
+            try:
+                features = TransactionFeatures(
+                    transaction_id=txn_data['transaction_id'],
+                    transaction_amount=txn_data['transaction_amount'],
+                    merchant_id=txn_data['merchant_id'],
+                    merchant_category=txn_data['merchant_category'],
+                    user_id=txn_data['user_id'],
+                    user_location=txn_data['user_location'],
+                    transaction_time=txn_data['transaction_time'],
+                    device_fingerprint=txn_data['device_fingerprint'],
+                    ip_address=txn_data['ip_address'],
+                    card_last_four=txn_data['card_last_four'],
+                )
+
+                result = inference_pipeline.process_transaction(features)
+                results.append({
+                    "transaction_id": result.transaction_id,
+                    "fraud_probability": result.fraud_probability,
+                    "risk_score": result.risk_score,
+                    "is_flagged": result.is_flagged,
+                    "recommendation": result.recommendation,
+                })
+            except Exception as e:
+                logger.error(f"Error processing transaction: {str(e)}")
+                results.append({
+                    "transaction_id": txn_data.get('transaction_id'),
+                    "error": str(e),
+                })
+
+        return jsonify({
+            "total_transactions": len(data['transactions']),
+            "processed": len(results),
+            "results": results,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Batch detection error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# Model Management Endpoints
+# ============================================================================
+
+@app.route('/api/models', methods=['GET'])
+def list_models():
+    """List all registered models."""
+    models = inference_pipeline.orchestrator.list_active_models()
+    
+    return jsonify({
+        "total_models": len(models),
+        "models": [
+            {
+                "model_id": m.model_id,
+                "model_type": m.model_type.value,
+                "version": m.version,
+                "accuracy": m.accuracy,
+                "precision": m.precision,
+                "recall": m.recall,
+                "f1_score": m.f1_score,
+                "is_active": m.is_active,
+                "last_trained": m.last_trained,
             }
-        }
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({
-            "error": "خطأ في تحليل المعاملة",
-            "details": str(e)
-        }), 500
+            for m in models
+        ],
+    }), 200
 
-@app.route('/history', methods=['GET'])
-def get_transaction_history():
-    """عرض تاريخ المعاملات المحللة"""
-    try:
-        # ترتيب المعاملات حسب التاريخ (الأحدث أولاً)
-        sorted_transactions = sorted(transactions_db, 
-                                   key=lambda x: x['timestamp'], 
-                                   reverse=True)
-        
-        # تحديد عدد النتائج المطلوبة
-        limit = request.args.get('limit', 10, type=int)
-        limited_transactions = sorted_transactions[:limit]
-        
-        return jsonify({
-            "total_transactions": len(transactions_db),
-            "returned_transactions": len(limited_transactions),
-            "transactions": limited_transactions
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "error": "خطأ في استرجاع التاريخ",
-            "details": str(e)
-        }), 500
 
-@app.route('/stats', methods=['GET'])
-def get_system_stats():
-    """عرض إحصائيات النظام"""
-    try:
-        if not transactions_db:
-            return jsonify({
-                "message": "لا توجد معاملات محللة بعد",
-                "total_transactions": 0
-            })
-        
-        # حساب الإحصائيات
-        total_transactions = len(transactions_db)
-        high_risk_count = sum(1 for t in transactions_db if t['risk_score'] >= 60)
-        medium_risk_count = sum(1 for t in transactions_db if 40 <= t['risk_score'] < 60)
-        low_risk_count = sum(1 for t in transactions_db if t['risk_score'] < 40)
-        
-        avg_risk_score = sum(t['risk_score'] for t in transactions_db) / total_transactions
-        
-        return jsonify({
-            "system_stats": {
-                "total_transactions": total_transactions,
-                "high_risk_transactions": high_risk_count,
-                "medium_risk_transactions": medium_risk_count,
-                "low_risk_transactions": low_risk_count,
-                "average_risk_score": round(avg_risk_score, 2)
-            },
-            "risk_distribution": {
-                "high_risk_percentage": round((high_risk_count / total_transactions) * 100, 1),
-                "medium_risk_percentage": round((medium_risk_count / total_transactions) * 100, 1),
-                "low_risk_percentage": round((low_risk_count / total_transactions) * 100, 1)
-            },
-            "last_updated": datetime.datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "error": "خطأ في حساب الإحصائيات",
-            "details": str(e)
-        }), 500
+@app.route('/api/models/<model_id>', methods=['GET'])
+def get_model(model_id):
+    """Get details of a specific model."""
+    model = inference_pipeline.orchestrator.get_model_metadata(model_id)
+    
+    if not model:
+        return jsonify({"error": "Model not found"}), 404
+    
+    return jsonify({
+        "model_id": model.model_id,
+        "model_type": model.model_type.value,
+        "version": model.version,
+        "accuracy": model.accuracy,
+        "precision": model.precision,
+        "recall": model.recall,
+        "f1_score": model.f1_score,
+        "is_active": model.is_active,
+        "last_trained": model.last_trained,
+    }), 200
+
+
+@app.route('/api/models/<model_id>/activate', methods=['POST'])
+def activate_model(model_id):
+    """Activate a model."""
+    inference_pipeline.orchestrator.activate_model(model_id)
+    
+    return jsonify({
+        "model_id": model_id,
+        "status": "activated",
+    }), 200
+
+
+@app.route('/api/models/<model_id>/deactivate', methods=['POST'])
+def deactivate_model(model_id):
+    """Deactivate a model."""
+    inference_pipeline.orchestrator.deactivate_model(model_id)
+    
+    return jsonify({
+        "model_id": model_id,
+        "status": "deactivated",
+    }), 200
+
+
+@app.route('/api/models/weights', methods=['POST'])
+def update_model_weights():
+    """Update model weights for ensemble."""
+    data = request.get_json()
+    
+    if 'weights' not in data:
+        return jsonify({"error": "Missing weights"}), 400
+    
+    inference_pipeline.orchestrator.update_model_weights(data['weights'])
+    
+    return jsonify({
+        "status": "weights_updated",
+        "weights": data['weights'],
+    }), 200
+
+
+# ============================================================================
+# Statistics and Performance Endpoints
+# ============================================================================
+
+@app.route('/api/statistics', methods=['GET'])
+def get_statistics():
+    """Get pipeline statistics."""
+    stats = inference_pipeline.get_pipeline_statistics()
+    
+    return jsonify(stats), 200
+
+
+@app.route('/api/configuration', methods=['GET'])
+def get_configuration():
+    """Get orchestrator configuration."""
+    config = inference_pipeline.orchestrator.export_configuration()
+    
+    return jsonify(config), 200
+
+
+# ============================================================================
+# Error Handlers
+# ============================================================================
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors."""
+    return jsonify({"error": "Endpoint not found"}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors."""
+    logger.error(f"Internal server error: {str(error)}")
+    return jsonify({"error": "Internal server error"}), 500
+
 
 if __name__ == '__main__':
-    print("🚀 بدء تشغيل API كشف الاحتيال المالي...")
-    print("📊 النظام جاهز لتحليل المعاملات المالية")
-    app.run(host='0.0.0.0', port=5000, debug=True)
-@app.route('/ai-assistant', methods=['POST'])
-def ai_assistant():
-    """مساعد ذكاء اصطناعي للمعاملات المالية"""
-    try:
-        data = request.get_json()
-        user_message = data.get('message', '').strip()
-        
-        if not user_message:
-            return jsonify({
-                "error": "الرجاء إدخال رسالة"
-            }), 400
-        
-        # تحليل نوع السؤال وتوليد الإجابة
-        response = generate_ai_response(user_message)
-        
-        return jsonify({
-            "user_message": user_message,
-            "ai_response": response,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "response_type": "financial_advice"
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "error": "خطأ في المساعد الذكي",
-            "details": str(e)
-        }), 500
-
-def generate_ai_response(user_message):
-    """توليد إجابة ذكية بناءً على رسالة المستخدم"""
-    message_lower = user_message.lower()
-    
-    # قاموس الكلمات المفتاحية والإجابات
-    responses = {
-        # أسئلة حول الاحتيال
-        'احتيال': {
-            'keywords': ['احتيال', 'غش', 'نصب', 'خداع', 'مشبوه'],
-            'response': """🛡️ **كشف الاحتيال المالي**
-
-الاحتيال المالي هو استخدام وسائل خادعة للحصول على أموال أو معلومات مالية بطريقة غير قانونية.
-
-**علامات الاحتيال الشائعة:**
-• معاملات بمبالغ كبيرة غير معتادة
-• معاملات من مواقع جغرافية مشبوهة
-• استخدام أجهزة غير معروفة أو مشبوهة
-• معاملات في أوقات غير عادية
-• طلبات معلومات شخصية حساسة
-
-**كيف تحمي نفسك:**
-• لا تشارك معلوماتك المصرفية مع أحد
-• تحقق من المعاملات بانتظام
-• استخدم كلمات مرور قوية
-• فعّل التنبيهات المصرفية"""
-        },
-        
-        # أسئلة حول المعاملات
-        'معاملة': {
-            'keywords': ['معاملة', 'تحويل', 'دفع', 'شراء', 'سحب'],
-            'response': """💳 **أنواع المعاملات المالية**
-
-**المعاملات الآمنة:**
-• الشراء المحلي من متاجر معروفة
-• التحويلات للأصدقاء والعائلة
-• السحب من أجهزة الصراف المعتادة
-
-**المعاملات عالية المخاطر:**
-• التحويلات الدولية لجهات غير معروفة
-• المعاملات النقدية الكبيرة
-• الشراء من مواقع غير موثوقة
-
-**نصائح للمعاملات الآمنة:**
-• تأكد من صحة بيانات المستقبل
-• استخدم طرق دفع آمنة
-• احتفظ بإيصالات المعاملات
-• راجع كشف الحساب بانتظام"""
-        },
-        
-        # أسئلة حول الأمان
-        'أمان': {
-            'keywords': ['أمان', 'حماية', 'آمن', 'خصوصية', 'تشفير'],
-            'response': """🔒 **الأمان المصرفي**
-
-**حماية الحساب:**
-• استخدم المصادقة الثنائية
-• غيّر كلمة المرور بانتظام
-• لا تستخدم شبكات Wi-Fi عامة للمعاملات
-• سجّل خروج من التطبيقات المصرفية
-
-**علامات التحذير:**
-• رسائل تطلب معلومات شخصية
-• روابط مشبوهة في الرسائل
-• مكالمات تدّعي أنها من البنك
-• طلبات عاجلة للتحقق من الحساب
-
-**في حالة الاشتباه:**
-• اتصل بالبنك فوراً
-• غيّر كلمات المرور
-• راجع المعاملات الأخيرة
-• أبلغ عن النشاط المشبوه"""
-        },
-        
-        # أسئلة حول البطاقات
-        'بطاقة': {
-            'keywords': ['بطاقة', 'فيزا', 'ماستركارد', 'ائتمان', 'خصم'],
-            'response': """💳 **أمان البطاقات المصرفية**
-
-**نصائح الاستخدام الآمن:**
-• احتفظ بالبطاقة في مكان آمن
-• لا تشارك رقم البطاقة أو CVV
-• غطّ لوحة المفاتيح عند إدخال الرقم السري
-• تحقق من المعاملات فوراً
-
-**في حالة فقدان البطاقة:**
-• أبلغ البنك فوراً لإيقاف البطاقة
-• راجع المعاملات الأخيرة
-• اطلب بطاقة بديلة
-• غيّر الرقم السري
-
-**علامات سوء الاستخدام:**
-• معاملات لم تقم بها
-• مبالغ غير صحيحة
-• معاملات من مواقع لم تزرها
-• رسوم غير مبررة"""
-        }
-    }
-    
-    # البحث عن الكلمات المفتاحية في الرسالة
-    for category, data in responses.items():
-        if any(keyword in message_lower for keyword in data['keywords']):
-            return data['response']
-    
-    # إجابات عامة للأسئلة الشائعة
-    general_responses = [
-        """🤖 **مساعدك المالي الذكي**
-
-أهلاً بك! أنا هنا لمساعدتك في:
-
-**🛡️ أمان المعاملات:**
-• كشف الاحتيال والأنشطة المشبوهة
-• نصائح الحماية المصرفية
-• تقييم مخاطر المعاملات
-
-**💡 استشارات مالية:**
-• أفضل ممارسات الدفع الآمن
-• كيفية حماية معلوماتك المالية
-• التعرف على علامات الاحتيال
-
-**📊 تحليل المعاملات:**
-• فحص المعاملات المشبوهة
-• تقييم مستوى المخاطر
-• توصيات الأمان المخصصة
-
-اسألني عن أي شيء يتعلق بالأمان المالي!""",
-
-        """💼 **خدمات الاستشارة المالية**
-
-يمكنني مساعدتك في:
-
-**🔍 تحليل المخاطر:**
-• تقييم أمان المعاملات
-• كشف الأنماط المشبوهة
-• تحليل سلوك الإنفاق
-
-**🛡️ الحماية والوقاية:**
-• نصائح الأمان المصرفي
-• حماية البيانات الشخصية
-• تجنب عمليات الاحتيال
-
-**📈 التوعية المالية:**
-• فهم أنواع المعاملات
-• معرفة حقوقك كعميل
-• أفضل الممارسات المصرفية
-
-كيف يمكنني مساعدتك اليوم؟"""
-    ]
-    
-    # اختيار إجابة عشوائية من الإجابات العامة
-    return random.choice(general_responses)
+    logger.info("Starting Inference Service API")
+    app.run(host='0.0.0.0', port=5003, debug=True)

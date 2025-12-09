@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: fraudguard-postgres
+    environment:
+      POSTGRES_USER: fraudguard
+      POSTGRES_PASSWORD: fraudguard_secure_password
+      POSTGRES_DB: fraudguard_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraudguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fraudguard-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: fraudguard-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fraudguard-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: fraudguard-api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      AUTH_SERVICE_URL: http://auth-service:5001
+      MONITORING_SERVICE_URL: http://monitoring-service:5002
+      INFERENCE_SERVICE_URL: http://inference-service:5003
+    depends_on:
+      - auth-service
+      - monitoring-service
+      - inference-service
+    networks:
+      - fraudguard-network
+
+  # Authentication Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: fraudguard-auth-service
+    ports:
+      - "5001:5001"
+    environment:
+      FLASK_ENV: development
+      JWT_SECRET_KEY: your-jwt-secret-key-here
+      DATABASE_URL: postgresql://fraudguard:fraudguard_secure_password@postgres:5432/fraudguard_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fraudguard-network
+
+  # Monitoring Service
+  monitoring-service:
+    build:
+      context: ./services/monitoring-service
+      dockerfile: Dockerfile
+    container_name: fraudguard-monitoring-service
+    ports:
+      - "5002:5002"
+    environment:
+      FLASK_ENV: development
+    networks:
+      - fraudguard-network
+
+  # Inference Service
+  inference-service:
+    build:
+      context: ./services/inference-service
+      dockerfile: Dockerfile
+    container_name: fraudguard-inference-service
+    ports:
+      - "5003:5003"
+    environment:
+      FLASK_ENV: development
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - fraudguard-network
+
+  # Frontend (React)
+  frontend:
+    build:
+      context: ./fraudguard-pro-app
+      dockerfile: Dockerfile
+    container_name: fraudguard-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:5000
+    depends_on:
+      - api-gateway
+    networks:
+      - fraudguard-network
+
+volumes:
+  postgres_data:
+
+networks:
+  fraudguard-network:
+    driver: bridge
